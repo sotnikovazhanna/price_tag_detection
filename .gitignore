@@ -139,6 +139,9 @@ cython_debug/
 # ПРОЕКТ-СПЕЦИФИЧНЫЕ
 # ============================
 
+# ВСЕ ДАННЫЕ (видео, CSV, датасеты) — НЕ ХРАНИМ В GIT
+data/
+
 # Модели (большие файлы)
 *.pt
 *.pth
@@ -151,7 +154,6 @@ cython_debug/
 
 # Датасеты
 dataset_yolo/
-data/dataset_yolo/
 ocr_dataset_*/
 extracted_tags/
 debug_tags/
@@ -164,7 +166,6 @@ output_videos/
 logs/
 *.csv
 !sample.csv
-!*.csv  # Исключить все CSV, кроме sample.csv
 
 # Папки с обучением (кроме нужных)
 runs/detect/
@@ -203,7 +204,7 @@ desktop.ini
 *.pid
 docker-compose.override.yml
 
-# CVAT экспорт (если не нужен в репозитории)
+# CVAT экспорт
 cvat_export/
 
 # Тестовые данные
