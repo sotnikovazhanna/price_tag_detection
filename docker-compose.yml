@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./models:/app/models
+      - ./uploads:/app/uploads
+      - ./results:/app/results
+      - ./data:/app/data
+    environment:
+      - MODEL_PATH=/app/models/best.pt
+    restart: unless-stopped

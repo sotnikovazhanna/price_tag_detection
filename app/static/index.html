@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PriceTag Detection</title>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial; max-width: 900px; margin: 50px auto; padding: 20px; }
+        .upload-area { border: 2px dashed #ccc; padding: 40px; text-align: center; margin: 20px 0; border-radius: 10px; }
+        button { background: #007bff; color: white; padding: 12px 24px; border: none; cursor: pointer; border-radius: 5px; font-size: 16px; }
+        button:hover { background: #0056b3; }
+        .result { margin-top: 20px; display: none; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background: #f4f4f4; }
+        .loading { display: none; color: #007bff; margin: 20px 0; }
+        .error { color: red; }
+        .download-links { display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+        .btn-download { display: inline-block; padding: 10px 20px; border-radius: 5px; text-decoration: none; font-weight: 600; }
+        .btn-csv { background: #28a745; color: white; }
+        .btn-csv:hover { background: #218838; }
+        .btn-video { background: #17a2b8; color: white; }
+        .btn-video:hover { background: #138496; }
+    </style>
+</head>
+<body>
+    <h1>Обнаружение ценников</h1>
+    <p>Загрузите видео для обнаружения ценников</p>
+
+    <div class="upload-area">
+        <input type="file" id="videoFile" accept="video/mp4, video/avi, video/mov">
+        <br><br>
+        <button onclick="uploadVideo()">Обработать</button>
+    </div>
+
+    <div class="loading" id="loading">Обработка видео... Это может занять несколько минут</div>
+    <div class="result" id="result"></div>
+
+    <script>
+        async function uploadVideo() {
+            const file = document.getElementById('videoFile').files[0];
+            if (!file) {
+                alert('Выберите видеофайл');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('video', file);
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('result').style.display = 'none';
+
+            try {
+                const response = await fetch('/api/process', { method: 'POST', body: formData });
+                const data = await response.json();
+
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('result').style.display = 'block';
+
+                if (data.error) {
+                    document.getElementById('result').innerHTML = `<div class="error">Ошибка: ${data.error}</div>`;
+                    return;
+                }
+
+                let html = `<h3>Найдено ценников: ${data.count}</h3>`;
+
+                if (data.results && data.results.length > 0) {
+                    html += `<table><thead><tr>`;
+                    const headers = Object.keys(data.results[0]);
+                    headers.forEach(h => html += `<th>${h}</th>`);
+                    html += `</tr></thead><tbody>`;
+                    data.results.forEach(row => {
+                        html += `<tr>`;
+                        headers.forEach(h => html += `<td>${row[h] || ''}</td>`);
+                        html += `</tr>`;
+                    });
+                    html += `</tbody></table>`;
+                    html += `<div class="download-links">`;
+                    html += `<a class="btn-download btn-csv" href="/api/download/${data.task_id}">Скачать CSV</a>`;
+                    html += `<a class="btn-download btn-video" href="/api/download_video/${data.task_id}">Скачать видео</a>`;
+                    html += `</div>`;
+                }
+                document.getElementById('result').innerHTML = html;
+            } catch (e) {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('result').innerHTML = `<div class="error">Ошибка: ${e.message}</div>`;
+                document.getElementById('result').style.display = 'block';
+            }
+        }
+    </script>
+</body>
+</html>
