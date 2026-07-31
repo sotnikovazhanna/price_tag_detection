@@ -110,7 +110,7 @@ price_tag_detection/
 ├── runs/                                   # Результаты обучения
 │   └── train/
 │       └── weights/
-│           └── best.pt                     # Обученная модель YOLO (~6 MB)
+│           └── best.pt                     # Обученная модель YOLO 
 │
 ├── training/                               
 │   ├── __init__.py
