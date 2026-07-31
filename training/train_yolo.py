@@ -1,38 +1,30 @@
-
-#Дообучение YOLO для распознавания ценников
-
-
 from ultralytics import YOLO
-import torch
 
 
 def main():
-    print("ДООБУЧЕНИЕ YOLO ДЛЯ ЦЕННИКОВ")
+    print("Обучение YOLO для детекции ценников")
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f" Device: {device}")
-
-    model = YOLO("models/yolov8n.pt")
+    model = YOLO("yolov8n.pt")
 
     results = model.train(
-        data="data/dataset_for_yolo/data.yaml",
-        epochs=50,
-        imgsz=640,
-        batch=8,
-        device=device,
-        workers=0,
-        patience=10,
-        save=True,
-        project="runs/train",
-        name="price_tag_detector",
-        exist_ok=True,
+        data="dataset_yolo/data.yaml",      # путь к датасету
+        epochs=50,                          # количество эпох
+        imgsz=640,                          # размер изображений
+        batch=8,                            # размер батча
+        device="cpu",                       # или "cuda" для GPU
+        workers=0,                          # для Windows
+        patience=10,                        # ранняя остановка
+        project="runs/train",               # куда сохранять
+        name="price_tag_detector",          # имя эксперимента
+        exist_ok=True,                      # перезаписывать
+        # Аугментация
         mosaic=0.5,
         mixup=0.3,
     )
 
-    print("\nОбучение завершено")
-    print("Результаты: runs/train/price_tag_detector")
-    print("Лучшая модель: runs/train/price_tag_detector/weights/best.pt")
+    print("\n Обучение завершено!")
+    print(f" Результаты: runs/train/price_tag_detector")
+    print(f" Лучшая модель: runs/train/price_tag_detector/weights/best.pt")
 
 
 if __name__ == "__main__":

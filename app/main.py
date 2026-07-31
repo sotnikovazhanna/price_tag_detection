@@ -1,59 +1,92 @@
 import os
 import uuid
 import shutil
+import tempfile
 import cv2
 import pandas as pd
 from pathlib import Path
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
 from fastapi.responses import HTMLResponse, FileResponse
 from ultralytics import YOLO
-from starlette.background import BackgroundTask
 
 MODEL_PATH = "runs/train/weights/best.pt"
 UPLOAD_DIR = Path("uploads")
 RESULTS_DIR = Path("results")
-TEMP_VIDEO_DIR = Path("temp_videos")
 
 UPLOAD_DIR.mkdir(exist_ok=True)
 RESULTS_DIR.mkdir(exist_ok=True)
-TEMP_VIDEO_DIR.mkdir(exist_ok=True)
 
-print("Загрузка модели YOLO...")
+print("Загрузка модели YOLO")
 model = YOLO(MODEL_PATH)
-print("Модель загружена.")
+print("Модель загружена")
 
-def remove_file(path: Path):
-    try:
-        if path.exists():
-            path.unlink()
-    except Exception:
-        pass
 
 def process_video(video_path, task_id):
-    """Обрабатывает видео через YOLO predict и сохраняет во временную папку"""
+    temp_dir = Path(tempfile.mkdtemp(prefix=f"price_tag_{task_id}_"))
+    temp_video_path = temp_dir / f"{task_id}_detected.mp4"
 
-    # Запускаем YOLO predict на видео
-    results = model.predict(
-        source=str(video_path),
-        conf=0.5,
-        save=True,
-        save_txt=True,
-        save_conf=True,
-        project="runs/detect",
-        name=task_id,
-        exist_ok=True,
-        verbose=False
-    )
+    cap = cv2.VideoCapture(str(video_path))
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if fps <= 0:
+        fps = 25
 
-    # Собираем результаты в CSV
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(str(temp_video_path), fourcc, fps, (width, height))
+
+    frame_count = 0
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     csv_data = []
-    for result in results:
-        if result.boxes is not None:
-            for box in result.boxes:
-                x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
-                conf = float(box.conf[0])
+
+    tracked_tags = []
+    next_id = 0
+
+    print(f"\nОбработка видео: {video_path.name}")
+    print(f"Всего кадров: {total_frames}, FPS: {fps:.2f}")
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        results = model(frame, conf=0.5, imgsz=640)
+
+        for box in results[0].boxes:
+            x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+            conf = float(box.conf[0])
+
+            matched = False
+            cx_new = (x1 + x2) / 2
+            cy_new = (y1 + y2) / 2
+
+            for tag in tracked_tags:
+                cx_old = (tag['x1'] + tag['x2']) / 2
+                cy_old = (tag['y1'] + tag['y2']) / 2
+
+                if abs(cx_new - cx_old) < 100 and abs(cy_new - cy_old) < 100:
+                    tag['x1'] = x1
+                    tag['y1'] = y1
+                    tag['x2'] = x2
+                    tag['y2'] = y2
+                    tag['conf'] = conf
+                    tag['frame'] = frame_count
+                    matched = True
+                    break
+
+            if not matched:
+                tracked_tags.append({
+                    'id': next_id,
+                    'x1': x1, 'y1': y1,
+                    'x2': x2, 'y2': y2,
+                    'conf': conf,
+                    'frame': frame_count
+                })
+                next_id += 1
+
                 csv_data.append({
-                    'filename': video_path.name,
+                    'id': next_id - 1,
+                    'first_frame': frame_count,
                     'confidence': round(conf, 3),
                     'x_min': int(x1),
                     'y_min': int(y1),
@@ -61,23 +94,42 @@ def process_video(video_path, task_id):
                     'y_max': int(y2)
                 })
 
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 3)
+            cv2.putText(frame, f"price_tag {conf:.2f}", (x1, y1 - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+
+        out.write(frame)
+        frame_count += 1
+
+        if frame_count % 30 == 0:
+            progress = int((frame_count / total_frames) * 100)
+            print(f"Прогресс: {progress}%", end="\r")
+
+    cap.release()
+    out.release()
+
+    print(f"\nОбработано кадров: {frame_count}")
+    print(f"Уникальных ценников: {len(tracked_tags)}")
+
     df = pd.DataFrame(csv_data)
     csv_path = RESULTS_DIR / f"{task_id}.csv"
     df.to_csv(csv_path, index=False, encoding='utf-8-sig')
 
-    # Ищем сохранённое видео и копируем во временную папку
-    video_files = list(Path(f"runs/detect/{task_id}").glob("*.mp4"))
-    temp_video_path = None
+    if video_path.exists():
+        video_path.unlink()
 
-    if video_files:
-        src_video = video_files[0]
-        temp_video_path = TEMP_VIDEO_DIR / f"{task_id}_detected.mp4"
-        shutil.copy2(src_video, temp_video_path)
+    return temp_video_path, csv_path, len(tracked_tags)
 
-        # Удаляем временную папку YOLO
-        shutil.rmtree(Path(f"runs/detect/{task_id}"), ignore_errors=True)
 
-    return df, temp_video_path
+def cleanup_temp_file(temp_path: Path):
+    try:
+        if temp_path and temp_path.exists():
+            temp_path.unlink()
+            if temp_path.parent.exists() and not any(temp_path.parent.iterdir()):
+                temp_path.parent.rmdir()
+            print(f"Удалён временный файл: {temp_path}")
+    except Exception as e:
+        print(f"Ошибка при удалении временного файла: {e}")
 
 
 HTML_PAGE = """
@@ -280,16 +332,8 @@ HTML_PAGE = """
                 let html = `<h3>Найдено ценников: ${data.count}</h3>`;
 
                 if (data.results && data.results.length > 0) {
-                    const colors = {};
-                    data.results.forEach(r => {
-                        const c = r.color || 'other';
-                        colors[c] = (colors[c] || 0) + 1;
-                    });
                     html += `<div class="stats">`;
-                    const colorNames = { red: 'Красные', white: 'Белые', yellow: 'Жёлтые', other: 'Другие' };
-                    for (const [key, count] of Object.entries(colors)) {
-                        html += `<div class="stat-item"><div class="num">${count}</div><div class="label">${colorNames[key] || key}</div></div>`;
-                    }
+                    html += `<div class="stat-item"><div class="num">${data.count}</div><div class="label">Всего детекций</div></div>`;
                     html += `</div>`;
                 }
 
@@ -332,6 +376,8 @@ HTML_PAGE = """
 
 app = FastAPI(title="Обнаружение ценников", description="Система обнаружения ценников для розничной торговли")
 
+app.temp_files = {}
+
 
 @app.get("/")
 async def root():
@@ -350,22 +396,17 @@ async def process_video_api(video: UploadFile = File(...)):
         f.write(await video.read())
 
     try:
-        df, temp_video_path = process_video(video_path, task_id)
+        temp_video_path, csv_path, count = process_video(video_path, task_id)
 
-        # Удаляем загруженное видео
-        if video_path.exists():
-            video_path.unlink()
+        app.temp_files[task_id] = temp_video_path
 
-        # Если видео создалось — сохраняем путь в словарь
-        if temp_video_path and temp_video_path.exists():
-            app.video_paths[task_id] = temp_video_path
-        else:
-            app.video_paths[task_id] = None
+        df = pd.read_csv(csv_path)
+        preview = df.head(20).to_dict('records')
 
         return {
             "task_id": task_id,
-            "count": len(df),
-            "results": df.head(20).to_dict('records') if len(df) > 0 else []
+            "count": count,
+            "results": df.to_dict('records')
         }
     except Exception as e:
         if video_path.exists():
@@ -389,29 +430,25 @@ async def download_csv(task_id: str):
 
 
 @app.get("/api/download_video/{task_id}")
-async def download_video(task_id: str):
-    video_path = app.video_paths.get(task_id)
-
-    if not video_path or not video_path.exists():
+async def download_video(task_id: str, background_tasks: BackgroundTasks):
+    temp_video_path = app.temp_files.get(task_id)
+    if not temp_video_path or not temp_video_path.exists():
         raise HTTPException(404, "Видео не найдено")
 
+    background_tasks.add_task(cleanup_temp_file, temp_video_path)
+    app.temp_files.pop(task_id, None)
+
     return FileResponse(
-        path=video_path,
+        temp_video_path,
         filename=f"detected_{task_id}.mp4",
-        media_type="video/mp4",
-        background=BackgroundTask(remove_file, video_path)
+        media_type="video/mp4"
     )
 
-
-# Хранилище путей к видео
-app.video_paths = {}
 
 if __name__ == "__main__":
     import uvicorn
 
-    print("\n" + "=" * 60)
     print("Сервер обнаружения ценников")
     print("http://localhost:8000")
     print("Нажмите Ctrl+C для остановки")
-    print("=" * 60 + "\n")
     uvicorn.run(app, host="0.0.0.0", port=8000)
