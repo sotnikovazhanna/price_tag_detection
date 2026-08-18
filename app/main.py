@@ -1,4 +1,3 @@
-import os
 import uuid
 import shutil
 import tempfile
@@ -401,7 +400,6 @@ async def process_video_api(video: UploadFile = File(...)):
         app.temp_files[task_id] = temp_video_path
 
         df = pd.read_csv(csv_path)
-        preview = df.head(20).to_dict('records')
 
         return {
             "task_id": task_id,
@@ -412,7 +410,7 @@ async def process_video_api(video: UploadFile = File(...)):
         if video_path.exists():
             try:
                 video_path.unlink()
-            except:
+            except Exception:
                 pass
         raise HTTPException(500, f"Ошибка обработки: {str(e)}")
 
