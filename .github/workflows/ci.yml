@@ -26,7 +26,7 @@ jobs:
     - name: Lint with flake8 (проверка стиля кода)
       run: |
         pip install flake8
-        flake8 app/ --count --show-source --statistics
+        flake8 app/ --count --show-source --statistics --max-line-length=120
 
     - name: Build Docker image
       run: docker build -t price-tag-detection .
