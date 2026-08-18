@@ -1,10 +1,10 @@
 import uuid
-import shutil
 import tempfile
 import cv2
 import pandas as pd
 from pathlib import Path
-from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File
+from fastapi import HTTPException, BackgroundTasks
 from fastapi.responses import HTMLResponse, FileResponse
 from ultralytics import YOLO
 
@@ -450,3 +450,6 @@ if __name__ == "__main__":
     print("http://localhost:8000")
     print("Нажмите Ctrl+C для остановки")
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+
