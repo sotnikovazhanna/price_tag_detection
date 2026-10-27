@@ -1,2 +1,8 @@
-# Создать .gitignore, если его нет
-echo ".idea/" >> .gitignore
+.idea/
+.venv/
+__pycache__/
+*.py[cod]
+uploads/*
+!uploads/.gitkeep
+results/*
+!results/.gitkeep
